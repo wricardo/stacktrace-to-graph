@@ -66,7 +66,7 @@ func (s *StackToGraph) ReportStacktrace() error {
 	return nil
 }
 
-func (s *StackToGraph) reportStackTraceToNeo4j(stackTraceData []map[string]string) error {
+func (s *StackToGraph) reportStackTraceToNeo4j(stackTraceData []ParsedStackEntry) error {
 	// Create a new session
 	session := s.neo4jDriver.NewSession(neo4j.SessionConfig{DatabaseName: "neo4j"})
 	defer session.Close()
@@ -83,12 +83,13 @@ func (s *StackToGraph) reportStackTraceToNeo4j(stackTraceData []map[string]strin
 			// Merge node for each function call to avoid duplicates
 			result, err := tx.Run(`
 			    MERGE (f:Function {name: $name})
-			    SET f.file = $file, f.line = $line
+			    SET f.file = $file, f.line = $line, f.package = $package
 			    RETURN id(f) AS nodeID
 			`, map[string]interface{}{
-				"name": frame["function"],
-				"file": frame["file"],
-				"line": frame["line"],
+				"name":    frame.Function,
+				"file":    frame.File,
+				"line":    frame.Line,
+				"package": frame.Package,
 			})
 			if err != nil {
 				return nil, err
@@ -153,7 +154,7 @@ func captureStackTrace() string {
 
 // parseStackTrace extracts function names, file paths, and line numbers from the stack trace.
 // It also cleans up function names by removing arguments.
-func parseStackTrace(stackTrace string) []map[string]string {
+func parseStackTrace(stackTrace string) []ParsedStackEntry {
 	// Regular expression to capture function calls in the stack trace
 	// Example stack trace lines:
 	// main.isError({0x104486073?, 0xc?})
@@ -161,17 +162,18 @@ func parseStackTrace(stackTrace string) []map[string]string {
 	re := regexp.MustCompile(`(?m)^(.*?)\n\s+(.*?)\:(\d+)(?: \+0x[0-9a-f]+)?$`)
 
 	matches := re.FindAllStringSubmatch(stackTrace, -1)
-	var parsedData []map[string]string
+	var parsedData []ParsedStackEntry
 
 	for _, match := range matches {
 		functionWithArgs := strings.TrimSpace(match[1])
 		// Remove arguments from the function name using regex
 		cleanFunction := cleanFunctionName(functionWithArgs)
 
-		parsedData = append(parsedData, map[string]string{
-			"function": cleanFunction,
-			"file":     match[2],
-			"line":     match[3],
+		parsedData = append(parsedData, ParsedStackEntry{
+			Function: cleanFunction,
+			File:     match[2],
+			Line:     match[3],
+			Package:  ParsePackageName(cleanFunction),
 		})
 	}
 
@@ -199,4 +201,34 @@ func cleanFunctionName(s string) string {
 	}
 	// If no outermost '(', return the original string
 	return s
+}
+
+// ParsePackageName extracts the package path from a fully qualified method/function string.
+// It returns the package path up to the first '.' after the last '/'.
+// If there is no '/', it takes the string up to the first '.'.
+func ParsePackageName(s string) string {
+	// Find the index of the last '/'
+	lastSlash := strings.LastIndex(s, "/")
+	if lastSlash == -1 {
+		lastSlash = 0
+	} else {
+		lastSlash += 1 // Move past the '/'
+	}
+
+	// Find the index of the first '.' after the last '/'
+	dotIndex := strings.Index(s[lastSlash:], ".")
+	if dotIndex == -1 {
+		// No '.' found after the last '/', return the entire string
+		return s
+	}
+
+	// The package path is up to lastSlash + dotIndex
+	return s[:lastSlash+dotIndex]
+}
+
+type ParsedStackEntry struct {
+	Function string
+	File     string
+	Line     string
+	Package  string
 }
