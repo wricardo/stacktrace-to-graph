@@ -168,12 +168,15 @@ func parseStackTrace(stackTrace string) []ParsedStackEntry {
 		functionWithArgs := strings.TrimSpace(match[1])
 		// Remove arguments from the function name using regex
 		cleanFunction := cleanFunctionName(functionWithArgs)
+		pkg := ParsePackageName(cleanFunction)
+		cleanFunction = strings.TrimPrefix(cleanFunction, pkg+".")
+		cleanFunction = strings.TrimPrefix(cleanFunction, pkg)
 
 		parsedData = append(parsedData, ParsedStackEntry{
 			Function: cleanFunction,
 			File:     match[2],
 			Line:     match[3],
-			Package:  ParsePackageName(cleanFunction),
+			Package:  pkg,
 		})
 	}
 
