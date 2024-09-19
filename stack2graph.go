@@ -137,6 +137,9 @@ func (s *StackToGraph) Close() {
 
 // ReportStacktrace encapsulates capturing, parsing, and reporting the stack trace to Neo4j.
 func ReportStacktrace() error {
+	if GLOBAL_STACK_TO_GRAPH == nil {
+		return fmt.Errorf("global StackToGraph instance is not set. Call SetupGlobal before using ReportStacktrace.")
+	}
 	return GLOBAL_STACK_TO_GRAPH.ReportStacktrace()
 }
 
