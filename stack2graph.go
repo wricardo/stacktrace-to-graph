@@ -82,8 +82,8 @@ func (s *StackToGraph) reportStackTraceToNeo4j(stackTraceData []ParsedStackEntry
 
 			// Merge node for each function call to avoid duplicates
 			result, err := tx.Run(`
-			    MERGE (f:Function {name: $name})
-			    SET f.file = $file, f.line = $line, f.package = $package
+			    MERGE (f:Function {name: $name, package: $package})
+			    SET f.file = $file, f.line = $line
 			    RETURN id(f) AS nodeID
 			`, map[string]interface{}{
 				"name":    frame.Function,
