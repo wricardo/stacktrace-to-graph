@@ -272,3 +272,85 @@ func TestParsePackageName(t *testing.T) {
 		}
 	}
 }
+
+// TestParseReceiver tests the ParseReceiver function with various inputs.
+func TestParseReceiver(t *testing.T) {
+	tests := []struct {
+		input        string
+		expectedFunc string
+		expectedRecv string
+	}{
+		{"(*conn).serve", "serve", "(*conn)"},
+		{"serverHandler.ServeHTTP", "ServeHTTP", "serverHandler"},
+		{"h2cHandler.ServeHTTP", "ServeHTTP", "h2cHandler"},
+		{"run.func2", "run", ""},
+		{"GrpcServer", "GrpcServer", ""},
+		{"Init", "Init", ""},
+		{"NewCampaignService", "NewCampaignService", ""},
+		{"(*CampaignService).ReCache", "ReCache", "(*CampaignService)"},
+		{"(*CampaignService).LoadZuriRules", "LoadZuriRules", "(*CampaignService)"},
+		{"(*CampaignService).LoadZuriRulesForCampaign", "LoadZuriRulesForCampaign", "(*CampaignService)"},
+		{"(*zuriAPIClient).GetRule", "GetRule", "(*zuriAPIClient)"},
+		{"(*Client[...]).CallUnary", "CallUnary", "(*Client[...])"},
+		{"NewClient[...].func2", "NewClient[...]", ""},
+		{"GrpcServer.DefaultClientInterceptors.NewInterceptor.func6.1", "NewInterceptor", "DefaultClientInterceptors"},
+		{"run.func9", "run", ""},
+		{"TemporalWorker", "TemporalWorker", ""},
+		{"TemporalWorker.DefaultClientInterceptors.NewInterceptor.func2.1", "NewInterceptor", "DefaultClientInterceptors"},
+		{"(*Engine).ServeHTTP", "ServeHTTP", "(*Engine)"},
+		{"(*Engine).handleHTTPRequest", "handleHTTPRequest", "(*Engine)"},
+		{"(*Context).Next", "Next", "(*Context)"},
+		{"NewRouter.DefaultStructuredLogger.StructuredLogger.func7", "StructuredLogger", "DefaultStructuredLogger"},
+		{"CustomRecoveryWithWriter.func1", "CustomRecoveryWithWriter", ""},
+		{"Middleware.func1", "Middleware", ""},
+		{"NewRouter.(*SessionAuthMiddleware).Handle.func5", "Handle", "(*SessionAuthMiddleware)"},
+		{"NewRouter.func1", "NewRouter", ""},
+		{"TriggerSyncFlow", "TriggerSyncFlow", ""},
+		{"(*GruleEngine).Execute", "Execute", "(*GruleEngine)"},
+		{"functionC", "functionC", ""},
+		{"DoSomething", "DoSomething", ""},
+		{"IsTest", "IsTest", ""},
+		{"FromContext", "FromContext", ""},
+		{"(*bandwidthclient).SendSms", "SendSms", "(*bandwidthclient)"},
+		{"(*Handler).ReceiveBandwithCallback", "ReceiveBandwithCallback", "(*Handler)"},
+		{"(*GruleEngine).ExecuteWithContext", "ExecuteWithContext", "(*GruleEngine)"},
+		{"(*RuleEntry).Execute", "Execute", "(*RuleEntry)"},
+		{"(*ThenScope).Execute", "Execute", "(*ThenScope)"},
+		{"(*ThenExpressionList).Execute", "Execute", "(*ThenExpressionList)"},
+		{"(*ThenExpression).Execute", "Execute", "(*ThenExpression)"},
+		{"(*ExpressionAtom).Evaluate", "Evaluate", "(*ExpressionAtom)"},
+		{"(*GoValueNode).CallFunction", "CallFunction", "(*GoValueNode)"},
+		{"Value.Call", "Call", "Value"},
+		{"Value.call", "call", "Value"},
+		{"(*WorkflowRunner).Run", "Run", "(*WorkflowRunner)"},
+		{"(*DataPostExecutor).Execute", "Execute", "(*DataPostExecutor)"},
+		{"(*DataPostExecutor).Execute.func1", "Execute", "(*DataPostExecutor)"},
+		{"(*ApiConnector).Execute", "Execute", "(*ApiConnector)"},
+		{"", "", ""},
+		{"functionA", "functionA", ""},
+		{"functionB", "functionB", ""},
+		{"(*Person).SayHello", "SayHello", "(*Person)"},
+		{"(*ServeMux).ServeHTTP", "ServeHTTP", "(*ServeMux)"},
+		{"HandlerFunc.ServeHTTP", "ServeHTTP", "HandlerFunc"},
+		{"ApiServer.(*Middleware).Wrap.func3", "Wrap", "(*Middleware)"},
+		{"NewZivoAPIHandler.func1", "NewZivoAPIHandler", ""},
+		{"(*Handler).ServeHTTP", "ServeHTTP", "(*Handler)"},
+		{"NewUnaryHandler[...].func2", "NewUnaryHandler[...]", ""},
+		{"ApiServer.NewInterceptor.func2.1", "NewInterceptor", ""},
+		{"NewUnaryHandler[...].func1", "NewUnaryHandler[...]", ""},
+		{"(*Handler).SendSms", "SendSms", "(*Handler)"},
+		{"(*SmsProviderFactory).BuildSmsProvider", "BuildSmsProvider", "(*SmsProviderFactory)"},
+		{"ReportStacktrace", "ReportStacktrace", ""},
+		{"(*StackToGraph).ReportStacktrace", "ReportStacktrace", "(*StackToGraph)"},
+		{"captureStackTrace", "captureStackTrace", ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			fn, recv := ParseReceiver(test.input)
+			if fn != test.expectedFunc || recv != test.expectedRecv {
+				t.Errorf("ParseReceiver(%q) = (%q, %q); want (%q, %q)", test.input, fn, recv, test.expectedFunc, test.expectedRecv)
+			}
+		})
+	}
+}

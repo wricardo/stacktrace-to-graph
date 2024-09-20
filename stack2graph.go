@@ -82,14 +82,23 @@ func (s *StackToGraph) reportStackTraceToNeo4j(stackTraceData []ParsedStackEntry
 
 			// Merge node for each function call to avoid duplicates
 			result, err := tx.Run(`
-			    MERGE (f:Function {name: $name, package: $package})
-			    SET f.file = $file, f.line = $line
-			    RETURN id(f) AS nodeID
+	        	MERGE (f:Function {name: $name, package: $package})
+		    SET f.file = $file, f.line = $line, f.function = $function, f.receiver = $receiver, f.packageName = $packageName, f.repository = $repository, f.repositoryOrganization = $repositoryOrganization, f.repositoryName = $repositoryName, f.folder = $folder, f.folderName = $folderName
+		    RETURN id(f) AS nodeID
+
 			`, map[string]interface{}{
-				"name":    frame.Function,
-				"file":    frame.File,
-				"line":    frame.Line,
-				"package": frame.Package,
+				"name":                   frame.OriginalName,
+				"receiver":               frame.Receiver,
+				"function":               frame.Function,
+				"file":                   frame.File,
+				"line":                   frame.Line,
+				"package":                frame.Package,
+				"packageName":            frame.PackageName,
+				"repository":             frame.Repository,
+				"repositoryOrganization": frame.RepositoryOrganization,
+				"repositoryName":         frame.RepositoryName,
+				"folder":                 frame.Folder,
+				"folderName":             frame.FolderName,
 			})
 			if err != nil {
 				return nil, err
@@ -168,19 +177,122 @@ func parseStackTrace(stackTrace string) []ParsedStackEntry {
 		functionWithArgs := strings.TrimSpace(match[1])
 		// Remove arguments from the function name using regex
 		cleanFunction := cleanFunctionName(functionWithArgs)
-		pkg := ParsePackageName(cleanFunction)
+		pkg, shortName := ParsePackageName(cleanFunction)
 		cleanFunction = strings.TrimPrefix(cleanFunction, pkg+".")
 		cleanFunction = strings.TrimPrefix(cleanFunction, pkg)
+		cleanFunction = strings.Replace(cleanFunction, "[...]", "", -1)
+
+		original, cleanFunction, receiver := ParseReceiver(cleanFunction)
+
+		repository, repoOrg, repoName := ParseRepository(pkg)
+
+		file := match[2]
+		line := match[3]
+
+		// Extract the folder name from the file path
+		folder, folderName := ParseFolder(file)
 
 		parsedData = append(parsedData, ParsedStackEntry{
-			Function: cleanFunction,
-			File:     match[2],
-			Line:     match[3],
-			Package:  pkg,
+			Receiver:               receiver,
+			Function:               cleanFunction,
+			File:                   file,
+			Folder:                 folder,
+			FolderName:             folderName,
+			Line:                   line,
+			Package:                pkg,
+			PackageName:            shortName,
+			OriginalName:           original,
+			Repository:             repository,
+			RepositoryOrganization: repoOrg,
+			RepositoryName:         repoName,
 		})
 	}
 
 	return parsedData
+}
+
+func ParseFolder(s string) (string, string) {
+	parts := strings.Split(s, "/")
+	if len(parts) > 1 {
+		return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-2]
+	}
+	return "", ""
+}
+
+func ParseRepository(s string) (string, string, string) {
+	if strings.HasPrefix(s, "github.com/") || strings.HasPrefix(s, "bitbucket.org/") {
+		parts := strings.Split(s, "/")
+		if len(parts) == 3 {
+			return strings.Join(parts[:3], "/"), parts[1], parts[2]
+		} else if len(parts) == 1 {
+			return "", "", ""
+		} else if len(parts) == 0 {
+			return "", "", ""
+		} else if len(parts) > 3 {
+			return strings.Join(parts[:3], "/"), parts[1], parts[len(parts)-1]
+		}
+	}
+	return "", "", ""
+}
+
+// ParseReceiver extracts the receiver from a function name.
+// It returns the original function name, cleaned function name and the receiver.
+func ParseReceiver(s string) (string, string, string) {
+	if s == "" {
+		return "", "", ""
+	}
+
+	parts := strings.Split(s, ".")
+	if len(parts) == 0 {
+		return s, s, ""
+	}
+
+	// Regular expression to match anonymous functions like func1, func2, func6.1
+	anonFuncPattern := regexp.MustCompile(`^func\d+(\.\d+)*$`)
+
+	// Start from the end and find the first non-anonymous function name
+	functionName := ""
+	var receiver string
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := parts[i]
+		if anonFuncPattern.MatchString(part) {
+			continue
+		} else {
+			functionName = part
+			if i > 0 {
+				receiver = parts[i-1]
+			}
+			break
+		}
+	}
+
+	// If functionName is still empty, it means all parts were anonymous functions
+	if functionName == "" {
+		functionName = parts[len(parts)-1]
+		if len(parts) > 1 {
+			receiver = parts[len(parts)-2]
+		}
+	}
+
+	return s, functionName, ReplacePointerNotation(receiver)
+}
+
+// ReplacePointerNotation uses regex to replace patterns like "(*TypeName)" with "TypeName"
+func ReplacePointerNotation(input string) string {
+	// Define the regex pattern to match "(*TypeName)"
+	// Explanation:
+	// \\(\\*    : Matches the literal "(*"
+	// ([A-Za-z0-9_]+) : Captures one or more alphanumeric characters or underscores (TypeName)
+	// \\)       : Matches the literal ")"
+	pattern := `\(\*([A-Za-z0-9_]+)\)`
+
+	// Compile the regex
+	re := regexp.MustCompile(pattern)
+
+	// Replace all matches with the captured group "$1" (TypeName)
+	result := re.ReplaceAllString(input, `$1`)
+
+	return result
 }
 
 func cleanFunctionName(s string) string {
@@ -206,10 +318,22 @@ func cleanFunctionName(s string) string {
 	return s
 }
 
-// ParsePackageName extracts the package path from a fully qualified method/function string.
+// ParsePackageName extracts the package full path and short name from a fully qualified package path.
+func ParsePackageName(s string) (fullName string, shortName string) {
+	fullName = parsePackageName(s)
+	parts := strings.Split(fullName, "/")
+	if len(parts) > 0 {
+		shortName = parts[len(parts)-1]
+	} else {
+		shortName = fullName
+	}
+	return
+}
+
+// parsePackageName extracts the package path from a fully qualified method/function string.
 // It returns the package path up to the first '.' after the last '/'.
 // If there is no '/', it takes the string up to the first '.'.
-func ParsePackageName(s string) string {
+func parsePackageName(s string) string {
 	// Find the index of the last '/'
 	lastSlash := strings.LastIndex(s, "/")
 	if lastSlash == -1 {
@@ -230,8 +354,16 @@ func ParsePackageName(s string) string {
 }
 
 type ParsedStackEntry struct {
-	Function string
-	File     string
-	Line     string
-	Package  string
+	Receiver               string
+	Function               string
+	File                   string // /path/to/file.go
+	Folder                 string // /path/to
+	FolderName             string // to
+	Line                   string
+	Package                string // github.com/x/y/z
+	PackageName            string // z
+	OriginalName           string
+	Repository             string // github.com/x/y
+	RepositoryOrganization string // x
+	RepositoryName         string // y
 }
